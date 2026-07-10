@@ -39,8 +39,8 @@ class AppColors {
 
 
 /// Central color palette so every screen/widget stays visually consistent.
-class AppColors {
-  AppColors._();
+class appColors {
+  appColors._();
 
   static const Color primaryDark = Color(0xFF4C3FE0);
   static const Color primary = Color(0xFF6C5CE7);

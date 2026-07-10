@@ -11,8 +11,8 @@ import 'package:http/http.dart' as http;
 
 import 'Appcolors.dart';
 import 'state_data.dart';
-import 'widgets/trending_news_carousel.dart';
-import 'widgets/state_bottom_sheet.dart';
+import 'trendingNews.dart';
+import 'StateBottomSHeet.dart';
 
 /// Change this to your FastAPI backend, e.g. http://10.0.2.2:8000 for
 /// Android emulator talking to localhost, or your deployed URL.
