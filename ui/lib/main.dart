@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'IndiamapPage.dart';
+import 'package:ui/Rootshell.dart';
+
 
 void main() => runApp(const ElectionIntelApp());
 
@@ -15,7 +16,7 @@ class ElectionIntelApp extends StatelessWidget {
         colorSchemeSeed: const Color(0xFF1E3A8A),
         useMaterial3: true,
       ),
-      home: const IndiaMapPage(),
+      home: const RootShell(),
     );
   }
 }
