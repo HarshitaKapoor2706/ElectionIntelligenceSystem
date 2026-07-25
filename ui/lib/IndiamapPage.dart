@@ -148,9 +148,9 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: AppColors.background,
-      child: SafeArea(
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
         child: Column(
           children: [
             const SizedBox(height: 8),
