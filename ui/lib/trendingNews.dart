@@ -3,10 +3,18 @@ import '../Appcolors.dart';
 import '../state_data.dart';
 
 class TrendingNewsCarousel extends StatelessWidget {
-  final List<NewsItem> items;
+  final List<NewsItem>? items; // null = still loading
+  final String? error;
+  final VoidCallback? onRetry;
   final VoidCallback? onSeeAll;
 
-  const TrendingNewsCarousel({super.key, required this.items, this.onSeeAll});
+  const TrendingNewsCarousel({
+    super.key,
+    required this.items,
+    this.error,
+    this.onRetry,
+    this.onSeeAll,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,17 +47,68 @@ class TrendingNewsCarousel extends StatelessWidget {
             ],
           ),
         ),
-        SizedBox(
-          height: 170,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => _NewsCard(item: items[i]),
+        SizedBox(height: 170, child: _buildBody()),
+      ],
+    );
+  }
+
+  Widget _buildBody() {
+    if (error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.wifi_off_rounded, color: AppColors.textMuted),
+              const SizedBox(height: 6),
+              const Text(
+                'Could not load news',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              if (onRetry != null)
+                TextButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
           ),
         ),
-      ],
+      );
+    }
+
+    if (items == null) {
+      return ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: 3,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, i) => Container(
+          width: 210,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (items!.isEmpty) {
+      return const Center(
+        child: Text('No news right now', style: TextStyle(color: AppColors.textMuted)),
+      );
+    }
+
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      itemCount: items!.length,
+      separatorBuilder: (_, __) => const SizedBox(width: 12),
+      itemBuilder: (context, i) => _NewsCard(item: items![i]),
     );
   }
 }
@@ -60,40 +119,52 @@ class _NewsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: Container(
         width: 210,
-        decoration: BoxDecoration(
-          gradient: AppColors.primaryGradient,
-          image: DecorationImage(
-            image: NetworkImage(
-                'https://picsum.photos/seed/${item.imageSeed}/420/340'),
-            fit: BoxFit.cover,
-            colorFilter: ColorFilter.mode(
-              Colors.black.withOpacity(0.25),
-              BlendMode.darken,
-            ),
-          ),
-        ),
+        // Gradient always sits as the base layer, so if there's no image
+        // (or it fails to load) this is exactly what shows -- no red
+        // "broken image" box, ever.
+        decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            // Bottom gradient scrim so text stays legible over any photo.
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      AppColors.primaryDark.withOpacity(0.85),
-                    ],
-                    stops: const [0.35, 1.0],
-                  ),
+            // Real photo on top of the gradient, only attempted if a URL
+            // exists. errorBuilder means a failed/expired NewsAPI image
+            // link just silently keeps showing the gradient underneath
+            // instead of Flutter's default red error indicator.
+            if (hasImage)
+              Image.network(
+                item.imageUrl!,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return const SizedBox.shrink(); // keep gradient while loading
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const SizedBox.shrink(); // keep gradient, no red box
+                },
+              ),
+
+            // Darkening + bottom gradient scrim so text stays legible
+            // over any photo.
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.05),
+                    AppColors.primaryDark.withOpacity(0.85),
+                  ],
+                  stops: const [0.35, 1.0],
                 ),
               ),
             ),
+
             Positioned(
               left: 14,
               right: 14,
@@ -103,8 +174,7 @@ class _NewsCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(20),

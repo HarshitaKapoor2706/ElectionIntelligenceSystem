@@ -1,8 +1,13 @@
 // state_data.dart
 //
-// Models + placeholder data for state details and trending news.
-// Replace the `mock*` functions with real calls to your FastAPI backend
-// once it's live — see comments inline.
+// Models + data fetching for state details and trending news.
+// News now fetches from your FastAPI backend (see backend/main.py).
+// State info is still mock data — see mockStateInfo() below.
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+const String backendBaseUrl = "http://192.168.31.231:8000";
 
 class CMRecord {
   final String name;
@@ -47,7 +52,7 @@ class StateInfo {
 
 /// TODO: replace with `GET $backendBaseUrl/state/{name}` and parse the
 /// JSON response into a StateInfo. Keeping this generator means the UI
-/// works end-to-end today, before the backend endpoint exists.
+/// works end-to-end today, before that backend endpoint exists.
 StateInfo mockStateInfo(String stateName) {
   return StateInfo(
     stateName: stateName,
@@ -85,32 +90,39 @@ StateInfo mockStateInfo(String stateName) {
 class NewsItem {
   final String title;
   final String subtitle;
-  final String imageSeed; // used to generate a placeholder image
-  const NewsItem({required this.title, required this.subtitle, required this.imageSeed});
+  final String? imageUrl; // null if the source didn't provide one
+  final String? url; // article link, for "See all" / tap-through later
+  const NewsItem({
+    required this.title,
+    required this.subtitle,
+    this.imageUrl,
+    this.url,
+  });
+
+  factory NewsItem.fromJson(Map<String, dynamic> json) {
+    return NewsItem(
+      title: (json['title'] ?? 'Untitled').toString(),
+      subtitle: (json['subtitle'] ?? 'News').toString(),
+      imageUrl: json['imageUrl'] as String?,
+      url: json['url'] as String?,
+    );
+  }
 }
 
-/// TODO: replace with `GET $backendBaseUrl/news` per your architecture doc.
-List<NewsItem> mockTrendingNews() {
-  return const [
-    NewsItem(
-      title: 'Beredar Susunan Kabinet Paslon 02',
-      subtitle: 'Trending',
-      imageSeed: 'rally1',
-    ),
-    NewsItem(
-      title: 'Penyebab Paslon 01 Kalah di Jatim',
-      subtitle: 'Trending',
-      imageSeed: 'rally2',
-    ),
-    NewsItem(
-      title: 'Alliance Talks Continue in Bihar',
-      subtitle: 'Live Update',
-      imageSeed: 'rally3',
-    ),
-    NewsItem(
-      title: 'Election Commission Issues Advisory',
-      subtitle: 'Breaking',
-      imageSeed: 'rally4',
-    ),
-  ];
+/// Fetches today's live news from the FastAPI backend's /news endpoint.
+/// Throws on failure — callers should wrap this in a FutureBuilder or
+/// try/catch and show an error/retry state (see TrendingNewsCarousel).
+Future<List<NewsItem>> fetchTrendingNews() async {
+  final res = await http
+      .get(Uri.parse('$backendBaseUrl/news'))
+      .timeout(const Duration(seconds: 12));
+
+  if (res.statusCode != 200) {
+    throw Exception('News request failed (${res.statusCode})');
+  }
+
+  final List<dynamic> data = jsonDecode(res.body);
+  return data
+      .map((e) => NewsItem.fromJson(e as Map<String, dynamic>))
+      .toList();
 }

@@ -1,8 +1,8 @@
 // india_map_page.dart
 //
-// Home screen: horizontally scrollable trending news at the top, a large
-// interactive India map below. Tapping a state opens a draggable
-// Google-Maps-style bottom sheet (see widgets/state_bottom_sheet.dart).
+// Home tab: trending news carousel (live, from backend) + large
+// interactive India map. Tapping a state opens a draggable bottom sheet.
+// No own Scaffold — this is embedded as a tab inside RootShell.
 
 import 'dart:convert';
 import 'dart:math' as math;
@@ -13,10 +13,6 @@ import 'Appcolors.dart';
 import 'state_data.dart';
 import 'trendingNews.dart';
 import 'StateBottomSHeet.dart';
-
-/// Change this to your FastAPI backend, e.g. http://10.0.2.2:8000 for
-/// Android emulator talking to localhost, or your deployed URL.
-const String backendBaseUrl = "http://10.0.2.2:8000";
 
 /// Public GeoJSON of Indian state boundaries (NAME_1 = state name).
 const String indiaGeoJsonUrl =
@@ -30,13 +26,15 @@ class IndiaMapPage extends StatefulWidget {
 }
 
 class _IndiaMapPageState extends State<IndiaMapPage> {
+  // ---- Map state ----
   List<_StateShape>? _shapes;
-  String? _error;
+  String? _mapError;
   String? _selectedState;
 
-  // Virtual canvas the map is projected onto before being scaled to fit
-  // the available space (via FittedBox). Fixed values keep the
-  // projection math simple and consistent.
+  // ---- News state ----
+  List<NewsItem>? _news; // null while loading
+  String? _newsError;
+
   static const double _canvasW = 900;
   static const double _canvasH = 1000;
 
@@ -44,6 +42,22 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
   void initState() {
     super.initState();
     _loadMap();
+    _loadNews();
+  }
+
+  Future<void> _loadNews() async {
+    setState(() {
+      _newsError = null;
+      _news = null;
+    });
+    try {
+      final news = await fetchTrendingNews();
+      if (!mounted) return;
+      setState(() => _news = news);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _newsError = e.toString());
+    }
   }
 
   Future<void> _loadMap() async {
@@ -128,9 +142,11 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
         shapes.add(_StateShape(name: raw.name, path: path));
       }
 
+      if (!mounted) return;
       setState(() => _shapes = shapes);
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (!mounted) return;
+      setState(() => _mapError = e.toString());
     }
   }
 
@@ -172,7 +188,11 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
               ),
             ),
             const SizedBox(height: 12),
-            TrendingNewsCarousel(items: mockTrendingNews()),
+            TrendingNewsCarousel(
+              items: _news,
+              error: _newsError,
+              onRetry: _loadNews,
+            ),
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -198,7 +218,6 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
                 ],
               ),
             ),
-            // Map takes all remaining space -> feels large on screen.
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -226,7 +245,7 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
   }
 
   Widget _buildMapBody() {
-    if (_error != null) {
+    if (_mapError != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -235,11 +254,11 @@ class _IndiaMapPageState extends State<IndiaMapPage> {
             children: [
               const Icon(Icons.error_outline, size: 40, color: Colors.red),
               const SizedBox(height: 12),
-              Text('Could not load map:\n$_error', textAlign: TextAlign.center),
+              Text('Could not load map:\n$_mapError', textAlign: TextAlign.center),
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () {
-                  setState(() => _error = null);
+                  setState(() => _mapError = null);
                   _loadMap();
                 },
                 child: const Text('Retry'),
