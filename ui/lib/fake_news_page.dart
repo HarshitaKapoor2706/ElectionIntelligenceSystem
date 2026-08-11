@@ -1,7 +1,15 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../Appcolors.dart';
+import '../state_data.dart' show backendBaseUrl;
 
-enum _Verdict { none, likelyTrue, likelyFalse, unverified }
+class _CheckResult {
+  final String verdict;
+  final String explanation;
+  final String source; // "news_verified" or "pattern_only"
+  const _CheckResult({required this.verdict, required this.explanation, required this.source});
+}
 
 class FakeNewsDetectorPage extends StatefulWidget {
   const FakeNewsDetectorPage({super.key});
@@ -12,29 +20,47 @@ class FakeNewsDetectorPage extends StatefulWidget {
 
 class _FakeNewsDetectorPageState extends State<FakeNewsDetectorPage> {
   final TextEditingController _controller = TextEditingController();
-  _Verdict _verdict = _Verdict.none;
-  String _reason = '';
+  _CheckResult? _result;
+  String? _error;
   bool _checking = false;
 
-  /// TODO: replace with a real call to your FastAPI `/fake-news-check`
-  /// endpoint (claim + recent news -> Gemini -> verdict), per your
-  /// architecture doc. This is a placeholder so the UI works standalone.
   Future<void> _checkClaim() async {
     final claim = _controller.text.trim();
     if (claim.isEmpty || _checking) return;
     setState(() {
       _checking = true;
-      _verdict = _Verdict.none;
+      _result = null;
+      _error = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 900));
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$backendBaseUrl/fake-news-check'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'claim': claim}),
+          )
+          .timeout(const Duration(seconds: 25));
 
-    setState(() {
-      _checking = false;
-      _verdict = _Verdict.likelyFalse;
-      _reason = 'No trusted source confirms this claim. This is placeholder '
-          'output — connect your backend to replace it with a real check.';
-    });
+      if (res.statusCode != 200) {
+        throw Exception('Request failed (${res.statusCode})');
+      }
+
+      final data = jsonDecode(res.body);
+      setState(() {
+        _checking = false;
+        _result = _CheckResult(
+          verdict: data['verdict'] as String,
+          explanation: data['explanation'] as String,
+          source: data['source'] as String,
+        );
+      });
+    } catch (e) {
+      setState(() {
+        _checking = false;
+        _error = "Couldn't reach the detector. ($e)";
+      });
+    }
   }
 
   @override
@@ -61,8 +87,9 @@ class _FakeNewsDetectorPageState extends State<FakeNewsDetectorPage> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Paste a claim you\'ve seen online to check it against recent, '
-              'trusted election news.',
+              'Paste a claim you\'ve seen online. We check it against '
+              'live election news, and fall back to pattern analysis '
+              'when there\'s nothing recent to compare it to.',
               style: TextStyle(color: AppColors.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 18),
@@ -107,7 +134,8 @@ class _FakeNewsDetectorPageState extends State<FakeNewsDetectorPage> {
               ),
             ),
             const SizedBox(height: 20),
-            if (_verdict != _Verdict.none) _VerdictCard(verdict: _verdict, reason: _reason),
+            if (_error != null) _ErrorCard(message: _error!),
+            if (_result != null) _VerdictCard(result: _result!),
           ],
         ),
       ),
@@ -116,34 +144,27 @@ class _FakeNewsDetectorPageState extends State<FakeNewsDetectorPage> {
 }
 
 class _VerdictCard extends StatelessWidget {
-  final _Verdict verdict;
-  final String reason;
-  const _VerdictCard({required this.verdict, required this.reason});
+  final _CheckResult result;
+  const _VerdictCard({required this.result});
 
   @override
   Widget build(BuildContext context) {
+    final v = result.verdict.toLowerCase();
     late Color color;
     late IconData icon;
-    late String label;
 
-    switch (verdict) {
-      case _Verdict.likelyTrue:
-        color = const Color(0xFF2ECC71);
-        icon = Icons.check_circle_rounded;
-        label = 'Likely true';
-        break;
-      case _Verdict.likelyFalse:
-        color = const Color(0xFFE24B4A);
-        icon = Icons.cancel_rounded;
-        label = 'Likely false';
-        break;
-      case _Verdict.unverified:
-      case _Verdict.none:
-        color = const Color(0xFFEF9F27);
-        icon = Icons.help_rounded;
-        label = 'Unverified';
-        break;
+    if (v.contains('true')) {
+      color = const Color(0xFF2ECC71);
+      icon = Icons.check_circle_rounded;
+    } else if (v.contains('false')) {
+      color = const Color(0xFFE24B4A);
+      icon = Icons.cancel_rounded;
+    } else {
+      color = const Color(0xFFEF9F27);
+      icon = Icons.help_rounded;
     }
+
+    final isNewsVerified = result.source == 'news_verified';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -152,26 +173,79 @@ class _VerdictCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 15),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      result.verdict,
+                      style: TextStyle(fontWeight: FontWeight.w800, color: color, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      result.explanation,
+                      style: const TextStyle(color: AppColors.textDark, fontSize: 13, height: 1.4),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isNewsVerified ? Icons.newspaper_rounded : Icons.psychology_alt_rounded,
+                  size: 13,
+                  color: AppColors.textMuted,
+                ),
+                const SizedBox(width: 5),
                 Text(
-                  reason,
-                  style: const TextStyle(color: AppColors.textDark, fontSize: 13, height: 1.4),
+                  isNewsVerified ? 'Checked against live news' : 'Pattern analysis (no matching news found)',
+                  style: const TextStyle(fontSize: 10.5, color: AppColors.textMuted, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  final String message;
+  const _ErrorCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.textMuted.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: AppColors.textMuted),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(message, style: const TextStyle(color: AppColors.textDark, fontSize: 13)),
           ),
         ],
       ),
